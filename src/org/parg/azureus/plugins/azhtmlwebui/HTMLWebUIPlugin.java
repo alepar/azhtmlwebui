@@ -22,31 +22,7 @@
 
 package org.parg.azureus.plugins.azhtmlwebui;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.text.DecimalFormat;
-import java.text.NumberFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.Hashtable;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.Vector;
-
+import HTML.Template;
 import org.gudy.azureus2.plugins.PluginConfig;
 import org.gudy.azureus2.plugins.PluginException;
 import org.gudy.azureus2.plugins.PluginInterface;
@@ -72,9 +48,17 @@ import org.gudy.azureus2.plugins.utils.LocaleUtilities;
 import org.gudy.azureus2.plugins.utils.Utilities;
 import org.gudy.azureus2.plugins.utils.resourcedownloader.ResourceDownloader;
 import org.gudy.azureus2.ui.webplugin.WebPlugin;
+import ru.alepar.vuze.mediaserver.MediaServerApi;
+import ru.alepar.vuze.mediaserver.VuzeMediaServerApi;
 
-
-import HTML.Template;
+import java.io.*;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class 
@@ -112,8 +96,6 @@ HTMLWebUIPlugin
 	private Formatters			formatters;
 	private LoggerChannel		log;
 	
-	private TrackerWebPageRequest	pageRequest;
-	
 	protected boolean	view_mode;
 	protected boolean	bCompletedTab;
 	
@@ -139,8 +121,11 @@ HTMLWebUIPlugin
 	private boolean 			debugOn;
 	
 	private boolean				tracker_plugin_loaded, tracker_enabled, tracker_web_enabled = false;
-	
-	
+
+	private MediaServerApi mediaServerApi;
+	private static final Pattern patternHeaderHost = Pattern.compile("([^:]+)(:.*)?");
+
+
 	public
 	HTMLWebUIPlugin()
 	{
@@ -256,11 +241,21 @@ HTMLWebUIPlugin
 		properties.put( PR_CONFIG_MODEL, config_model );
 		properties.put( PR_VIEW_MODEL, view_model );
 		properties.put( PR_HIDE_RESOURCE_CONFIG, new Boolean( true ));
+
+		mediaServerApi = getMediaServerApi(plugin_interface);
 		
 		super.initialize( plugin_interface );
 		
 	}
-	
+
+	private static MediaServerApi getMediaServerApi(PluginInterface pluginInterface) {
+		try {
+			return new VuzeMediaServerApi(pluginInterface.getPluginManager());
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
 	public String
 	getName()
 	{
@@ -352,8 +347,6 @@ HTMLWebUIPlugin
 		
 		try {
 			
-		pageRequest = request;
-		
 		String url = request.getURL();
 		
 		if ( url.equals("/")){
@@ -396,7 +389,7 @@ HTMLWebUIPlugin
 			
 				args.put( "filename", canonical_file.toString());
 				
-				return( handleTemplate( url, params, args, os ));
+				return( handleTemplate( url, params, args, os, request));
 				
 			} else if(file_type.equals("ajax")){
 				return handleAjax( url, params, os);
@@ -443,7 +436,7 @@ HTMLWebUIPlugin
 				
 				args.put( "filehandle", new InputStreamReader( is, DEFAULT_ENCODING ));
 
-				return( handleTemplate( url, params, args, os ));
+				return( handleTemplate( url, params, args, os, request ));
 					
 			}else if(file_type.equals("ajax")){
 				return handleAjax( url, params, os);
@@ -1171,10 +1164,10 @@ HTMLWebUIPlugin
 	
 	protected boolean
 	handleTemplate(
-		String			page_url,
-		Hashtable		params,
-		Hashtable		args,
-		OutputStream	os )
+			String page_url,
+			Hashtable params,
+			Hashtable args,
+			OutputStream os, TrackerWebPageRequest pageRequest)
 	
 		throws IOException
 	{	
@@ -2162,9 +2155,13 @@ HTMLWebUIPlugin
 						t.setParam("created_by_msg", getLocalisedMessageText("template.details.createdby"));
 						t.setParam("created_by", torrent.getCreatedBy());
 						t.setParam("created_on_msg", getLocalisedMessageText("GeneralView.label.creationdate"));
-						t.setParam("created_on", formatters.formatDate(torrent.getCreationDate()*1000) );
+						t.setParam("created_on", formatters.formatDate(torrent.getCreationDate() * 1000) );
 						t.setParam("comment_msg", getLocalisedMessageText("GeneralView.label.comment"));
-						t.setParam("comment", torrent.getComment());
+						final String comment = torrent.getComment();
+						t.setParam("comment", comment);
+						if(comment.startsWith("http://")) {
+							t.setParam("comment_link", comment);
+						}
 						t.setParam("announce_url_msg", getLocalisedMessageText("GeneralView.label.trackerurl"));
 						t.setParam("announce_url", torrent.getAnnounceURL().toString());
 						t.setParam("downloaded_msg", getLocalisedMessageText("GeneralView.label.downloaded"));
@@ -2234,6 +2231,10 @@ HTMLWebUIPlugin
 								fi.put("p_norm", "1");
 							}
 							fi.put("priority", prio);
+							final String mediaServerLink = getMediaServerLink(pageRequest, dmfi[i]);
+							if (mediaServerLink != null) {
+								fi.put("mediaserver_link", mediaServerLink);
+							}
 						}
 						t.setParam("files", files);
 						
@@ -2303,6 +2304,26 @@ HTMLWebUIPlugin
 		
 		return( true );
 	}
+	}
+
+	private String getMediaServerLink(TrackerWebPageRequest pageRequest, DiskManagerFileInfo dmfi) {
+		if(mediaServerApi == null) {
+			return null;
+		}
+
+		try {
+			final Matcher matcher = patternHeaderHost.matcher((CharSequence) pageRequest.getHeaders().get("host"));
+			final String host;
+			if (matcher.find()) {
+				host = matcher.group(1);
+			} else {
+				host = pageRequest.getLocalAddress().getHostName();
+			}
+
+			return pageRequest.getAbsoluteURL().getProtocol() + "://" + host + mediaServerApi.getFileInfos(dmfi).url;
+		} catch (Exception e) {
+			return null;
+		}
 	}
 
 

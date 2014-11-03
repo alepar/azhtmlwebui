@@ -448,7 +448,11 @@ var page_url_simple	= unescape(escape("<tmpl_var page>"))
                 </tr>
                 <tr>
                   <th><tmpl_var comment_msg></th>
+                  <tmpl_if comment_link>
+                  <td><a href="<tmpl_var comment_link>"><tmpl_var comment></a></td>
+                  <tmpl_else>
                   <td><tmpl_var comment></td>
+                  </tmpl_if>
                 </tr>
                 <tr>
                   <th><tmpl_var announce_url_msg></th>
@@ -469,7 +473,11 @@ var page_url_simple	= unescape(escape("<tmpl_var page>"))
               </tr>
               <tmpl_loop files>
               <tr class="trtorrent<tmpl_if __ODD__>_odd</tmpl_if>">
+                <tmpl_if mediaserver_link>
+                <td><a href="<tmpl_var mediaserver_link>"><tmpl_var filename></a></td>
+                <tmpl_else>
                 <td><tmpl_var filename></td>
+                </tmpl_if>
                 <td align="right"><tmpl_var size></td>
                 <td align="right"><tmpl_var percent></td>
                 <td>&nbsp;</td>
