@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" build-on-make="true" name="azhtmlwebui:jar">
+    <output-path>$PROJECT_DIR$/workdir/plugins/azhtmlwebui</output-path>
+    <root id="archive" name="azhtmlwebui.jar">
+      <element id="module-output" name="azhtmlwebui" />
+    </root>
+  </artifact>
+</component>
