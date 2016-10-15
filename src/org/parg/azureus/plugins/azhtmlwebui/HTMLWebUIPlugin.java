@@ -2420,13 +2420,18 @@ private Template populateTemplate(Template t, String type, String[] s_items) {
 		
 		// loop downloads
 		for (int i=0;i<total_torrents;i++){
-			
+			// removes useless junk torrents, which cause webui to NPE
+			final Download torrent = (Download) torrents.get(i);
+			if (torrent.getTorrent() == null) {
+				torrent.remove();
+				continue;
+			}
+
 			Hashtable t_row 			= new Hashtable();
 			
 			torrent_info.add( t_row );
 			
-			Download torrent = (Download) torrents.get(i);
-			
+
 			String torrent_name = torrent.getName();
 			
 			if (torrent_name.length() > 35) {
@@ -2436,9 +2441,9 @@ private Template populateTemplate(Template t, String type, String[] s_items) {
 				t_row.put("torrent_short_name", escapeXML(torrent_name));
 				t_row.put("torrent_name_too_long", "0");
 			}
-			
+
 			t_row.put("torrent_name", escapeXML(torrent_name));
-			
+
 			t_row.put("torrent_url_name", formatters.encodeBytesToString( torrent.getTorrent().getHash()));
 			
 			t_row.put("torrent_hash_short", formatters.encodeBytesToString( torrent.getTorrent().getHash()).substring(0, 5));
