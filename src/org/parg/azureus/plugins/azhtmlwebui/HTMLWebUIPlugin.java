@@ -123,7 +123,6 @@ HTMLWebUIPlugin
 	private boolean				tracker_plugin_loaded, tracker_enabled, tracker_web_enabled = false;
 
 	private MediaServerApi mediaServerApi;
-	private static final Pattern patternHeaderHost = Pattern.compile("([^:]+)(:.*)?");
 
 
 	public
@@ -2159,7 +2158,7 @@ HTMLWebUIPlugin
 						t.setParam("comment_msg", getLocalisedMessageText("GeneralView.label.comment"));
 						final String comment = torrent.getComment();
 						t.setParam("comment", comment);
-						if(comment.startsWith("http://")) {
+						if(comment.startsWith("http")) {
 							t.setParam("comment_link", comment);
 						}
 						t.setParam("announce_url_msg", getLocalisedMessageText("GeneralView.label.trackerurl"));
@@ -2306,21 +2305,64 @@ HTMLWebUIPlugin
 	}
 	}
 
+	private static String getHeader(TrackerWebPageRequest request, String header) {
+		final Object value = request.getHeaders().get(header);
+		return value == null ? null : String.valueOf(value);
+	}
+
+	private static String getOriginalHost(TrackerWebPageRequest request) {
+		final String xfwd = getHeader(request, "x-forwarded-host");
+		if (xfwd != null && !xfwd.trim().isEmpty()) {
+			return xfwd;
+		}
+
+		return getHeader(request, "host");
+	}
+
+	private static String getOriginalProtocol(TrackerWebPageRequest request) {
+		final String xfwd = getHeader(request, "x-forwarded-proto");
+		if (xfwd != null && !xfwd.trim().isEmpty()) {
+			return xfwd;
+		}
+
+		return request.getAbsoluteURL().getProtocol();
+	}
+
+	private static boolean isBehindProxy(TrackerWebPageRequest request) {
+		final String xfwd = getHeader(request, "x-forwarded-proto");
+		return xfwd != null && !xfwd.trim().isEmpty();
+	}
+
+	private static final Pattern PATTERN_CUTOUT_PORT = Pattern.compile("^:\\d+(/.+)$");
+	private static String cutOutPort(String urlSuffix) {
+		final Matcher matcher = PATTERN_CUTOUT_PORT.matcher(urlSuffix);
+		if (!matcher.find()) {
+			return urlSuffix;
+		}
+
+		return matcher.group(1);
+	}
+
 	private String getMediaServerLink(TrackerWebPageRequest pageRequest, DiskManagerFileInfo dmfi) {
 		if(mediaServerApi == null) {
 			return null;
 		}
 
 		try {
-			final Matcher matcher = patternHeaderHost.matcher((CharSequence) pageRequest.getHeaders().get("host"));
-			final String host;
-			if (matcher.find()) {
-				host = matcher.group(1);
+			final String originalHost = getOriginalHost(pageRequest);
+			final String originalProtocol = getOriginalProtocol(pageRequest);
+
+			final String originalMediaSuffixUrl = mediaServerApi.getFileInfos(dmfi).url;
+			final boolean behindProxy = isBehindProxy(pageRequest);
+			final String mediaSuffixUrl;
+			if (behindProxy) {
+				mediaSuffixUrl = cutOutPort(originalMediaSuffixUrl);
 			} else {
-				host = pageRequest.getLocalAddress().getHostName();
+				mediaSuffixUrl = originalMediaSuffixUrl;
 			}
 
-			return pageRequest.getAbsoluteURL().getProtocol() + "://" + host + mediaServerApi.getFileInfos(dmfi).url;
+			return String.format("%s://%s%s", originalProtocol, originalHost, mediaSuffixUrl);
+
 		} catch (Exception e) {
 			return null;
 		}
